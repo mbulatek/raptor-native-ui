@@ -270,6 +270,10 @@ void ControlServer::poll_once() {
                 const auto ok = page_controller_ && page_controller_->assign_page(data["display_id"].get<std::string>(), data["page_id"].get<std::string>(), error);
                 reply = envelope(snapshot_.service_name, command, request_id, ok);
                 if (ok) {
+                    spdlog::info("ui scene/page change command=assign-page display_id={} page_id={} active_scene={}",
+                                 data["display_id"].get<std::string>(),
+                                 data["page_id"].get<std::string>(),
+                                 page_controller_->active_scene_id());
                     reply["data"] = json{{"message", "page assigned"}, {"active_scene", page_controller_->active_scene_id()}};
                 } else {
                     reply["error"] = json{{"code", "assignment-failed"}, {"message", error.empty() ? "failed to assign page" : error}};
@@ -284,6 +288,10 @@ void ControlServer::poll_once() {
                 const auto ok = page_controller_ && page_controller_->swap_pages(data["display_a"].get<std::string>(), data["display_b"].get<std::string>(), error);
                 reply = envelope(snapshot_.service_name, command, request_id, ok);
                 if (ok) {
+                    spdlog::info("ui scene/page change command=swap-pages display_a={} display_b={} active_scene={}",
+                                 data["display_a"].get<std::string>(),
+                                 data["display_b"].get<std::string>(),
+                                 page_controller_->active_scene_id());
                     reply["data"] = json{{"message", "pages swapped"}, {"active_scene", page_controller_->active_scene_id()}};
                 } else {
                     reply["error"] = json{{"code", "swap-failed"}, {"message", error.empty() ? "failed to swap pages" : error}};
@@ -298,6 +306,9 @@ void ControlServer::poll_once() {
                 const auto ok = page_controller_ && page_controller_->activate_scene(data["scene_id"].get<std::string>(), error);
                 reply = envelope(snapshot_.service_name, command, request_id, ok);
                 if (ok) {
+                    spdlog::info("ui scene change command=activate-scene scene_id={} active_scene={}",
+                                 data["scene_id"].get<std::string>(),
+                                 page_controller_->active_scene_id());
                     reply["data"] = json{{"message", "scene activated"}, {"active_scene", page_controller_->active_scene_id()}};
                 } else {
                     reply["error"] = json{{"code", "scene-activation-failed"}, {"message", error.empty() ? "failed to activate scene" : error}};

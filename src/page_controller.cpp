@@ -1,6 +1,9 @@
 #include "raptor_ui/page_controller.hpp"
 
 #include <algorithm>
+#include <string_view>
+
+#include <spdlog/spdlog.h>
 
 namespace raptor::ui {
 namespace {
@@ -25,10 +28,26 @@ bool assignments_equal(const std::vector<DisplayAssignmentConfig>& lhs, const st
     return true;
 }
 
+std::string scene_name_or_none(const std::string& scene_id) {
+    return scene_id.empty() ? "<none>" : scene_id;
+}
+
+void log_scene_change_if_needed(const std::string& old_scene, const std::string& new_scene, std::string_view reason) {
+    if (old_scene == new_scene) {
+        return;
+    }
+    spdlog::debug(
+        "ui scene changed {} -> {} reason={}",
+        scene_name_or_none(old_scene),
+        scene_name_or_none(new_scene),
+        reason);
+}
+
 }  // namespace
 
 PageController::PageController(const ServiceConfig& config)
     : pages_(config.pages), displays_(config.displays), assignments_(config.assignments), scenes_(config.scenes), active_scene_id_(config.initial_scene) {
+    const std::string original_scene = active_scene_id_;
     if (!active_scene_id_.empty()) {
         std::string error;
         if (!activate_scene(active_scene_id_, error)) {
@@ -43,6 +62,7 @@ PageController::PageController(const ServiceConfig& config)
             }
         }
     }
+    log_scene_change_if_needed(original_scene, active_scene_id_, "startup");
 }
 
 const std::vector<PageConfig>& PageController::pages() const {
@@ -109,7 +129,9 @@ bool PageController::assign_page(const std::string& display_id, const std::strin
     } else {
         assignment_it->page_id = page_id;
     }
+    const std::string old_scene = active_scene_id_;
     active_scene_id_.clear();
+    log_scene_change_if_needed(old_scene, active_scene_id_, "assign-page");
     error_message.clear();
     return true;
 }
@@ -136,7 +158,9 @@ bool PageController::swap_pages(const std::string& display_a, const std::string&
         return assignment.display_id == display_b;
     });
     std::swap(assignment_a->page_id, assignment_b->page_id);
+    const std::string old_scene = active_scene_id_;
     active_scene_id_.clear();
+    log_scene_change_if_needed(old_scene, active_scene_id_, "swap-pages");
     error_message.clear();
     return true;
 }
@@ -149,8 +173,10 @@ bool PageController::activate_scene(const std::string& scene_id, std::string& er
         error_message = "unknown scene";
         return false;
     }
+    const std::string old_scene = active_scene_id_;
     assignments_ = scene_it->assignments;
     active_scene_id_ = scene_it->id;
+    log_scene_change_if_needed(old_scene, active_scene_id_, "activate-scene");
     error_message.clear();
     return true;
 }
