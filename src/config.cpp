@@ -147,8 +147,11 @@ void validate_display(const DisplayConfig& display, std::unordered_set<std::stri
     if (display.hardware.spi_speed_hz <= 0) {
         throw std::runtime_error("display.hardware.spi_speed_hz must be > 0 for display " + display.id);
     }
-    if (display.hardware.cs_gpio < 0 || display.hardware.reset_gpio < 0 || display.hardware.dc_gpio < 0) {
-        throw std::runtime_error("display GPIO pins must be >= 0 for display " + display.id);
+    if (display.hardware.cs_gpio < -1) {
+        throw std::runtime_error("display.hardware.cs_gpio must be >= -1 for display " + display.id);
+    }
+    if (display.hardware.reset_gpio < 0 || display.hardware.dc_gpio < 0) {
+        throw std::runtime_error("display reset/dc GPIO pins must be >= 0 for display " + display.id);
     }
 }
 

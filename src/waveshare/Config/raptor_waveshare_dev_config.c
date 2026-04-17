@@ -64,7 +64,7 @@ static bool config_equals(const waveshare_dev_hardware_config_t* lhs,
 }
 
 static struct requested_line* line_for_pin(UWORD Pin) {
-    if (Pin == (UWORD)g_config.cs_gpio) {
+    if (g_config.cs_gpio >= 0 && Pin == (UWORD)g_config.cs_gpio) {
         return &g_cs_line;
     }
     if (Pin == (UWORD)g_config.reset_gpio) {
@@ -215,10 +215,12 @@ void DEV_Delay_ms(UDOUBLE xms) {
 }
 
 static int DEV_GPIO_Init(void) {
-    if (request_line(&g_cs_line, (unsigned int)g_config.cs_gpio, "raptor-ui-cs",
-                     GPIOD_LINE_DIRECTION_OUTPUT, GPIOD_LINE_VALUE_ACTIVE) < 0) {
-        fprintf(stderr, "GPIO init failed: cs_gpio=%d gpiochip=%d\n", g_config.cs_gpio, g_config.gpiochip);
-        return -1;
+    if (g_config.cs_gpio >= 0) {
+        if (request_line(&g_cs_line, (unsigned int)g_config.cs_gpio, "raptor-ui-cs",
+                         GPIOD_LINE_DIRECTION_OUTPUT, GPIOD_LINE_VALUE_ACTIVE) < 0) {
+            fprintf(stderr, "GPIO init failed: cs_gpio=%d gpiochip=%d\n", g_config.cs_gpio, g_config.gpiochip);
+            return -1;
+        }
     }
     if (request_line(&g_rst_line, (unsigned int)g_config.reset_gpio, "raptor-ui-rst",
                      GPIOD_LINE_DIRECTION_OUTPUT, GPIOD_LINE_VALUE_ACTIVE) < 0) {
@@ -291,7 +293,9 @@ UBYTE DEV_ModuleInit(void) {
     }
 
     g_active_config = g_config;
-    OLED_CS_1;
+    if (g_config.cs_gpio >= 0) {
+        OLED_CS_1;
+    }
     OLED_RST_1;
     OLED_DC_1;
     return 0;
