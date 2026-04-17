@@ -1,4 +1,4 @@
-#include "raptor_ui/ipc.hpp"
+﻿#include "raptor_ui/ipc.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -45,12 +45,58 @@ json midi_json(const MidiEventSummary& midi) {
 }
 
 json sequencer_json(const UpstreamStatus& status) {
-    return {
+    json j = {
         {"reachable", status.reachable},
         {"service", status.service},
         {"summary", status.summary},
         {"timestamp_ns", status.timestamp_ns},
     };
+    if (status.tick.has_value()) {
+        j["tick"] = *status.tick;
+    }
+    if (status.bpm.has_value()) {
+        j["bpm"] = *status.bpm;
+    }
+    if (!status.transport.empty()) {
+        j["transport"] = status.transport;
+    }
+    if (!status.active_pattern.empty()) {
+        j["active_pattern"] = status.active_pattern;
+    }
+    if (status.active_step.has_value()) {
+        j["active_step"] = *status.active_step;
+    }
+    if (status.bar.has_value()) {
+        j["bar"] = *status.bar;
+    }
+    if (status.bars_total.has_value()) {
+        j["bars_total"] = *status.bars_total;
+    }
+    if (status.beat.has_value()) {
+        j["beat"] = *status.beat;
+    }
+    if (status.beats_per_bar.has_value()) {
+        j["beats_per_bar"] = *status.beats_per_bar;
+    }
+    if (status.beat_unit.has_value()) {
+        j["beat_unit"] = *status.beat_unit;
+    }
+    if (status.active_clip_index.has_value()) {
+        j["active_clip_index"] = *status.active_clip_index;
+    }
+    if (status.midi_in_port.has_value()) {
+        j["midi_in_port"] = *status.midi_in_port;
+    }
+    if (status.midi_in_channel.has_value()) {
+        j["midi_in_channel"] = *status.midi_in_channel;
+    }
+    if (status.midi_out_port.has_value()) {
+        j["midi_out_port"] = *status.midi_out_port;
+    }
+    if (status.midi_out_channel.has_value()) {
+        j["midi_out_channel"] = *status.midi_out_channel;
+    }
+    return j;
 }
 
 json snapshot_json(const UiSnapshot& snapshot) {
@@ -347,6 +393,52 @@ std::optional<UpstreamStatus> ControlClient::query_status(const std::string& req
         status.reachable = reply.value("ok", false);
         status.service = reply.value("service", "unknown");
         status.timestamp_ns = reply.value("timestamp_ns", static_cast<std::uint64_t>(0));
+        if (reply.contains("snapshot") && reply["snapshot"].is_object()) {
+            const auto& snap = reply["snapshot"];
+            if (snap.contains("tick")) {
+                status.tick = snap.value("tick", static_cast<std::uint64_t>(0));
+            }
+            if (snap.contains("bpm")) {
+                status.bpm = snap.value("bpm", 0.0);
+            }
+            status.transport = snap.value("transport", "");
+            status.active_pattern = snap.value("active_pattern", "");
+            if (snap.contains("active_step")) {
+                status.active_step = snap.value("active_step", static_cast<std::uint32_t>(0));
+            }
+
+            if (snap.contains("bar")) {
+                status.bar = snap.value("bar", static_cast<std::uint32_t>(0));
+            }
+            if (snap.contains("bars_total")) {
+                status.bars_total = snap.value("bars_total", static_cast<std::uint32_t>(0));
+            }
+            if (snap.contains("beat")) {
+                status.beat = snap.value("beat", static_cast<std::uint32_t>(0));
+            }
+            if (snap.contains("beats_per_bar")) {
+                status.beats_per_bar = snap.value("beats_per_bar", static_cast<std::uint32_t>(0));
+            }
+            if (snap.contains("beat_unit")) {
+                status.beat_unit = snap.value("beat_unit", static_cast<std::uint32_t>(0));
+            }
+            if (snap.contains("active_clip_index")) {
+                status.active_clip_index = snap.value("active_clip_index", static_cast<std::uint32_t>(0));
+            }
+            if (snap.contains("midi_in_port")) {
+                status.midi_in_port = snap.value("midi_in_port", -1);
+            }
+            if (snap.contains("midi_in_channel")) {
+                status.midi_in_channel = snap.value("midi_in_channel", -1);
+            }
+            if (snap.contains("midi_out_port")) {
+                status.midi_out_port = snap.value("midi_out_port", -1);
+            }
+            if (snap.contains("midi_out_channel")) {
+                status.midi_out_channel = snap.value("midi_out_channel", -1);
+            }
+        }
+
         if (status.reachable && reply.contains("data")) {
             status.summary = "status ok";
         } else if (reply.contains("error")) {

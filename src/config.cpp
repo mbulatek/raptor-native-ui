@@ -13,6 +13,8 @@ namespace {
 constexpr std::string_view kPageTypes[] = {
     "boot",
     "transport",
+    "playing",
+    "recording",
     "midi_monitor",
     "status",
 };

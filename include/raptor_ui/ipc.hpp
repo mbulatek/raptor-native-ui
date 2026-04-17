@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <optional>
@@ -21,6 +21,25 @@ struct UpstreamStatus {
     std::string service;
     std::string summary;
     std::uint64_t timestamp_ns {0};
+
+    // Optional snapshot details from raptor-seq-service control/status.
+    std::optional<std::uint64_t> tick;
+    std::optional<double> bpm;
+    std::string transport;
+    std::string active_pattern;
+    std::optional<std::uint32_t> active_step;
+
+    std::optional<std::uint32_t> bar;
+    std::optional<std::uint32_t> bars_total;
+    std::optional<std::uint32_t> beat;
+    std::optional<std::uint32_t> beats_per_bar;
+    std::optional<std::uint32_t> beat_unit;
+    std::optional<std::uint32_t> active_clip_index;
+
+    std::optional<int> midi_in_port;
+    std::optional<int> midi_in_channel;
+    std::optional<int> midi_out_port;
+    std::optional<int> midi_out_channel;
 };
 
 struct UiSnapshot {

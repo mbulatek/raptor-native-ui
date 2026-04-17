@@ -1,10 +1,11 @@
-#include "raptor_ui/display_backend.hpp"
+﻿#include "raptor_ui/display_backend.hpp"
 
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -221,6 +222,140 @@ void draw_status_page(const UiSnapshot& snapshot, const std::string& layout) {
     waveshare_display_draw_status(snapshot.page_title.c_str(), line1, line2, line3);
 }
 
+std::optional<std::uint8_t> parse_first_hex_byte(const std::string& hex) {
+    auto hex_value = [](char c) -> int {
+        if (c >= '0' && c <= '9') {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f') {
+            return 10 + (c - 'a');
+        }
+        if (c >= 'A' && c <= 'F') {
+            return 10 + (c - 'A');
+        }
+        return -1;
+    };
+
+    int hi = -1;
+    for (char c : hex) {
+        const int v = hex_value(c);
+        if (v < 0) {
+            continue;
+        }
+        if (hi < 0) {
+            hi = v;
+            continue;
+        }
+        const int lo = v;
+        return static_cast<std::uint8_t>((hi << 4) | lo);
+    }
+    return std::nullopt;
+}
+
+int midi_channel_from_status(std::uint8_t status) {
+    if (status >= 0x80 && status <= 0xEF) {
+        return static_cast<int>((status & 0x0F) + 1);
+    }
+    return -1;
+}
+
+int clip_index_from_active_pattern(const std::string& pattern) {
+    // Expect patterns like A01/B12; fall back to 1.
+    int value = 0;
+    bool any = false;
+    for (char c : pattern) {
+        if (c >= '0' && c <= '9') {
+            any = true;
+            value = (value * 10) + (c - '0');
+        }
+    }
+    if (!any || value <= 0) {
+        return 1;
+    }
+    return value;
+}
+
+void draw_recording_page(const UiSnapshot& snapshot, const std::string& layout) {
+    if (layout == "compact") {
+        Paint_DrawString_EN(0, 0, "REC", &Font8, WHITE, BLACK);
+        Paint_DrawString_EN(0, 12, snapshot.last_midi.available ? snapshot.last_midi.bytes_hex.c_str() : "NO MIDI", &Font8, WHITE, BLACK);
+        return;
+    }
+
+    const int clip_index = snapshot.sequencer.active_clip_index.has_value() && *snapshot.sequencer.active_clip_index > 0
+                               ? static_cast<int>(*snapshot.sequencer.active_clip_index)
+                               : clip_index_from_active_pattern(snapshot.sequencer.active_pattern);
+
+    const auto status_byte = snapshot.last_midi.available ? parse_first_hex_byte(snapshot.last_midi.bytes_hex) : std::nullopt;
+    const int midi_ch = status_byte.has_value() ? midi_channel_from_status(*status_byte) : -1;
+
+    // Prefer sequencer-derived musical position when available; otherwise fall back to prototype mapping.
+    const std::uint64_t tick = snapshot.sequencer.tick.value_or(0);
+    const std::uint32_t step = snapshot.sequencer.active_step.value_or(static_cast<std::uint32_t>(tick % 16ULL));
+
+    const std::uint32_t bar = snapshot.sequencer.bar.value_or(static_cast<std::uint32_t>((tick / 16ULL) + 1ULL));
+    const std::uint32_t bars_total = snapshot.sequencer.bars_total.value_or(8U);
+    const std::uint32_t beat = snapshot.sequencer.beat.value_or(static_cast<std::uint32_t>((step / 4U) + 1U));
+    const std::uint32_t beats_per_bar = snapshot.sequencer.beats_per_bar.value_or(4U);
+
+    char clip_line[32];
+    char in_line[48];
+    char out_line[48];
+    char bar_line[32];
+    char beat_line[32];
+
+    std::snprintf(clip_line, sizeof(clip_line), "Clip %d", clip_index);
+
+    const int in_port = snapshot.sequencer.midi_in_port.value_or(-1);
+    const int in_ch = snapshot.sequencer.midi_in_channel.value_or(-1);
+    if (in_port >= 0) {
+        if (in_ch > 0) {
+            std::snprintf(in_line, sizeof(in_line), "IN  P%d  CH%d", in_port, in_ch);
+        } else {
+            std::snprintf(in_line, sizeof(in_line), "IN  P%d", in_port);
+        }
+    } else if (snapshot.last_midi.available) {
+        if (midi_ch > 0) {
+            std::snprintf(in_line, sizeof(in_line), "IN  P%d  CH%d", snapshot.last_midi.global_port, midi_ch);
+        } else {
+            std::snprintf(in_line, sizeof(in_line), "IN  P%d", snapshot.last_midi.global_port);
+        }
+    } else {
+        std::snprintf(in_line, sizeof(in_line), "IN  ---");
+    }
+
+    const int out_port = snapshot.sequencer.midi_out_port.value_or(-1);
+    const int out_ch = snapshot.sequencer.midi_out_channel.value_or(-1);
+    if (out_port >= 0) {
+        if (out_ch > 0) {
+            std::snprintf(out_line, sizeof(out_line), "OUT P%d  CH%d", out_port, out_ch);
+        } else {
+            std::snprintf(out_line, sizeof(out_line), "OUT P%d", out_port);
+        }
+    } else {
+        std::snprintf(out_line, sizeof(out_line), "OUT ---");
+    }
+
+    std::snprintf(bar_line, sizeof(bar_line), "Bar: %u/%u", bar, bars_total);
+    std::snprintf(beat_line, sizeof(beat_line), "Beat: %u/%u", beat, beats_per_bar);
+
+    Paint_DrawString_EN(0, 0, snapshot.page_title.c_str(), &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(0, 18, clip_line, &Font16, WHITE, BLACK);
+    Paint_DrawString_EN(0, 44, in_line, &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(0, 60, out_line, &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(0, 84, bar_line, &Font16, WHITE, BLACK);
+    Paint_DrawString_EN(0, 108, beat_line, &Font16, WHITE, BLACK);
+}
+
+void draw_playing_page(const UiSnapshot& snapshot, const std::string& layout) {
+    if (layout == "compact") {
+        Paint_DrawString_EN(0, 0, "PLAY", &Font8, WHITE, BLACK);
+        Paint_DrawString_EN(0, 12, snapshot.last_midi.available ? snapshot.last_midi.bytes_hex.c_str() : "NO MIDI", &Font8, WHITE, BLACK);
+        return;
+    }
+    draw_recording_page(snapshot, layout);
+}
+
 void draw_midi_page(const UiSnapshot& snapshot, const std::string& layout) {
     if (layout == "compact") {
         char line1[48];
@@ -289,6 +424,10 @@ void draw_page(const UiSnapshot& snapshot, const std::string& layout) {
         draw_transport_page(snapshot, layout);
     } else if (snapshot.page_type == "midi_monitor") {
         draw_midi_page(snapshot, layout);
+    } else if (snapshot.page_type == "playing") {
+        draw_playing_page(snapshot, layout);
+    } else if (snapshot.page_type == "recording") {
+        draw_recording_page(snapshot, layout);
     } else {
         draw_status_page(snapshot, layout);
     }
@@ -322,10 +461,10 @@ public:
     }
 
     void render(const UiSnapshot& snapshot) override {
-        spdlog::debug("display render id={} page_type={}", config_.id, snapshot.page_type);
+        spdlog::trace("display render id={} page_type={}", config_.id, snapshot.page_type);
         apply_hardware();
         if (config_.force_clear_each_frame) {
-            spdlog::debug("display render id={} force_clear_each_frame=1", config_.id);
+            spdlog::trace("display render id={} force_clear_each_frame=1", config_.id);
             waveshare_display_clear_panel(config_.model.c_str());
         }
         waveshare_display_prepare_frame(config_.model.c_str(), framebuffer_.data(), config_.rotation);

@@ -69,7 +69,7 @@ pages:
   - id: boot_debug_main
     type: boot
     title: Boot Debug
-    allowed_models: [oled_1in5]
+    allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
     image:
       path: /usr/share/raptor-ui-service/images/boot-main.bmp
@@ -89,7 +89,19 @@ pages:
   - id: perf_transport_main
     type: transport
     title: Transport
-    allowed_models: [oled_1in5]
+    allowed_models: [oled_1in5, oled_1in5_b]
+    default_variant: square
+
+  - id: perf_playing_main
+    type: playing
+    title: Playing
+    allowed_models: [oled_1in5, oled_1in5_b]
+    default_variant: square
+
+  - id: perf_recording_main
+    type: recording
+    title: Recording
+    allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
 
   - id: perf_transport_wide
@@ -101,13 +113,13 @@ pages:
   - id: perf_midi_main
     type: midi_monitor
     title: MIDI Focus
-    allowed_models: [oled_1in5]
+    allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
 
   - id: perf_midi_sidecar
     type: midi_monitor
     title: MIDI Sidecar
-    allowed_models: [oled_1in5]
+    allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
 
   - id: perf_status_mini
@@ -119,13 +131,13 @@ pages:
   - id: maint_status_main
     type: status
     title: Service Status
-    allowed_models: [oled_1in5]
+    allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
 
   - id: maint_status_sidecar
     type: status
     title: Diagnostics
-    allowed_models: [oled_1in5]
+    allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
 
   - id: maint_status_portrait
@@ -143,7 +155,7 @@ pages:
   - id: standby_status_main
     type: status
     title: Standby
-    allowed_models: [oled_1in5]
+    allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
 
   - id: standby_status_mini
