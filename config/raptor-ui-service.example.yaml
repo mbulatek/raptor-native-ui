@@ -27,7 +27,7 @@ displays:
       spi_channel: 0
       spi_speed_hz: 10000000
       spi_flags: 3
-      cs_gpio: 8
+      cs_gpio: -1
       reset_gpio: 27
       dc_gpio: 25
 
@@ -44,7 +44,7 @@ displays:
       spi_channel: 1
       spi_speed_hz: 10000000
       spi_flags: 3
-      cs_gpio: 7
+      cs_gpio: -1
       reset_gpio: 22
       dc_gpio: 24
 
