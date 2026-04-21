@@ -96,6 +96,29 @@ json sequencer_json(const UpstreamStatus& status) {
     if (status.midi_out_channel.has_value()) {
         j["midi_out_channel"] = *status.midi_out_channel;
     }
+    if (!status.recording_quantize.empty()) {
+        j["recording_quantize"] = status.recording_quantize;
+    }
+    if (status.song.available) {
+        json tracks = json::array();
+        for (const auto& track : status.song.tracks) {
+            tracks.push_back({
+                {"id", track.id},
+                {"name", track.name},
+                {"muted", track.muted},
+                {"midi_in", track.midi_in},
+                {"midi_out", track.midi_out},
+                {"midi_channel_in", track.midi_channel_in},
+                {"midi_channel_out", track.midi_channel_out},
+            });
+        }
+        j["song"] = {
+            {"available", true},
+            {"id", status.song.id},
+            {"title", status.song.title},
+            {"tracks", std::move(tracks)},
+        };
+    }
     return j;
 }
 
@@ -128,6 +151,93 @@ json snapshot_json(const UiSnapshot& snapshot) {
         {"last_midi", midi_json(snapshot.last_midi)},
         {"sequencer", sequencer_json(snapshot.sequencer)},
     };
+}
+
+std::optional<json> request_control_json(const std::string& endpoint, const json& request, const int timeout_ms) {
+    void* context = zmq_ctx_new();
+    if (context == nullptr) {
+        return std::nullopt;
+    }
+
+    void* socket = zmq_socket(context, ZMQ_REQ);
+    if (socket == nullptr) {
+        zmq_ctx_term(context);
+        return std::nullopt;
+    }
+
+    constexpr int linger_ms = 0;
+    (void)zmq_setsockopt(socket, ZMQ_RCVTIMEO, &timeout_ms, sizeof(timeout_ms));
+    (void)zmq_setsockopt(socket, ZMQ_SNDTIMEO, &timeout_ms, sizeof(timeout_ms));
+    (void)zmq_setsockopt(socket, ZMQ_LINGER, &linger_ms, sizeof(linger_ms));
+
+    if (zmq_connect(socket, endpoint.c_str()) != 0) {
+        zmq_close(socket);
+        zmq_ctx_term(context);
+        return std::nullopt;
+    }
+
+    const auto payload = request.dump();
+    if (zmq_send(socket, payload.data(), payload.size(), 0) < 0) {
+        zmq_close(socket);
+        zmq_ctx_term(context);
+        return std::nullopt;
+    }
+
+    std::vector<char> buffer(64 * 1024, 0);
+    const auto size = zmq_recv(socket, buffer.data(), buffer.size(), 0);
+    zmq_close(socket);
+    zmq_ctx_term(context);
+    if (size <= 0) {
+        return std::nullopt;
+    }
+
+    try {
+        return json::parse(std::string(buffer.data(), buffer.data() + size));
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+SequencerSongSummary parse_song_summary_from_project(const json& project_json) {
+    SequencerSongSummary song;
+    if (!project_json.is_object()) {
+        return song;
+    }
+
+    if (!project_json.contains("song") || !project_json["song"].is_object()) {
+        return song;
+    }
+    const auto& s = project_json["song"];
+    song.id = s.value("id", std::string{});
+    song.title = s.value("title", std::string{});
+
+    if (s.contains("tracks") && s["tracks"].is_array()) {
+        for (const auto& t : s["tracks"]) {
+            if (!t.is_object()) {
+                continue;
+            }
+            SequencerTrackSummary track;
+            track.id = t.value("id", std::string{});
+            track.name = t.value("name", std::string{});
+            track.muted = t.value("muted", false);
+            track.midi_in = t.value("midi_in", std::string{});
+            track.midi_out = t.value("midi_out", std::string{});
+            if (t.contains("midi_channel_in")) {
+                track.midi_channel_in = t.value("midi_channel_in", -1);
+            } else if (t.contains("midi_channel")) {
+                track.midi_channel_in = t.value("midi_channel", -1);
+            }
+            if (t.contains("midi_channel_out")) {
+                track.midi_channel_out = t.value("midi_channel_out", -1);
+            } else if (t.contains("midi_channel")) {
+                track.midi_channel_out = t.value("midi_channel", -1);
+            }
+            song.tracks.push_back(std::move(track));
+        }
+    }
+
+    song.available = true;
+    return song;
 }
 
 }  // namespace
@@ -316,79 +426,19 @@ ControlClient::~ControlClient() = default;
 
 std::optional<UpstreamStatus> ControlClient::query_status(const std::string& request_id) const {
     spdlog::debug("sequencer status query endpoint={} request_id={}", endpoint_, request_id);
-    void* context = zmq_ctx_new();
-    if (context == nullptr) {
-        spdlog::error("sequencer status query zmq_ctx_new failed endpoint={}: {}", endpoint_, zmq_strerror(zmq_errno()));
-        return std::nullopt;
-    }
-
-    void* socket = zmq_socket(context, ZMQ_REQ);
-    if (socket == nullptr) {
-        spdlog::error("sequencer status query zmq_socket(ZMQ_REQ) failed endpoint={}: {}", endpoint_, zmq_strerror(zmq_errno()));
-        zmq_ctx_term(context);
-        return std::nullopt;
-    }
-
     constexpr int timeout_ms = 100;
-    constexpr int linger_ms = 0;
-    (void)zmq_setsockopt(socket, ZMQ_RCVTIMEO, &timeout_ms, sizeof(timeout_ms));
-    (void)zmq_setsockopt(socket, ZMQ_SNDTIMEO, &timeout_ms, sizeof(timeout_ms));
-    (void)zmq_setsockopt(socket, ZMQ_LINGER, &linger_ms, sizeof(linger_ms));
-
-    if (zmq_connect(socket, endpoint_.c_str()) != 0) {
-        static std::uint64_t connect_failures = 0;
-        ++connect_failures;
-        if (connect_failures == 1 || (connect_failures % 30) == 0) {
-            spdlog::warn(
-                "sequencer status query connect failed endpoint={} err={} failures={}",
-                endpoint_,
-                zmq_strerror(zmq_errno()),
-                connect_failures);
+    const auto reply_opt = request_control_json(endpoint_, json{{"command", "status"}, {"request_id", request_id}}, timeout_ms);
+    if (!reply_opt.has_value()) {
+        static std::uint64_t failures = 0;
+        ++failures;
+        if (failures == 1 || (failures % 30) == 0) {
+            spdlog::warn("sequencer status query failed endpoint={} failures={}", endpoint_, failures);
         }
-        zmq_close(socket);
-        zmq_ctx_term(context);
-        return std::nullopt;
-    }
-
-    const auto request = json{{"command", "status"}, {"request_id", request_id}}.dump();
-    if (zmq_send(socket, request.data(), request.size(), 0) < 0) {
-        static std::uint64_t send_failures = 0;
-        ++send_failures;
-        if (send_failures == 1 || (send_failures % 30) == 0) {
-            spdlog::warn(
-                "sequencer status query send failed endpoint={} err={} failures={}",
-                endpoint_,
-                zmq_strerror(zmq_errno()),
-                send_failures);
-        }
-        zmq_close(socket);
-        zmq_ctx_term(context);
-        return std::nullopt;
-    }
-
-    char buffer[4096];
-    const auto size = zmq_recv(socket, buffer, sizeof(buffer), 0);
-    if (size > 0) {
-        spdlog::debug("sequencer status query recv bytes={}", static_cast<long long>(size));
-    } else {
-        static std::uint64_t recv_failures = 0;
-        ++recv_failures;
-        if (recv_failures == 1 || (recv_failures % 30) == 0) {
-            spdlog::warn(
-                "sequencer status query recv failed endpoint={} err={} failures={}",
-                endpoint_,
-                zmq_strerror(zmq_errno()),
-                recv_failures);
-        }
-    }
-    zmq_close(socket);
-    zmq_ctx_term(context);
-    if (size <= 0) {
         return std::nullopt;
     }
 
     try {
-        const auto reply = json::parse(std::string(buffer, buffer + size));
+        const auto& reply = *reply_opt;
         UpstreamStatus status;
         status.reachable = reply.value("ok", false);
         status.service = reply.value("service", "unknown");
@@ -437,6 +487,9 @@ std::optional<UpstreamStatus> ControlClient::query_status(const std::string& req
             if (snap.contains("midi_out_channel")) {
                 status.midi_out_channel = snap.value("midi_out_channel", -1);
             }
+            if (snap.contains("recording_quantize")) {
+                status.recording_quantize = snap.value("recording_quantize", std::string{});
+            }
         }
 
         if (status.reachable && reply.contains("data")) {
@@ -445,6 +498,32 @@ std::optional<UpstreamStatus> ControlClient::query_status(const std::string& req
             status.summary = reply["error"].value("message", "upstream error");
         }
         return status;
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+std::optional<SequencerSongSummary> ControlClient::query_project(const std::string& request_id) const {
+    spdlog::debug("sequencer project query endpoint={} request_id={}", endpoint_, request_id);
+    constexpr int timeout_ms = 150;
+    const auto reply_opt = request_control_json(endpoint_, json{{"command", "get-project"}, {"request_id", request_id}}, timeout_ms);
+    if (!reply_opt.has_value()) {
+        return std::nullopt;
+    }
+
+    try {
+        const auto& reply = *reply_opt;
+        if (!reply.value("ok", false)) {
+            return std::nullopt;
+        }
+        if (!reply.contains("data") || !reply["data"].is_object()) {
+            return std::nullopt;
+        }
+        const auto& data = reply["data"];
+        if (!data.contains("project")) {
+            return std::nullopt;
+        }
+        return parse_song_summary_from_project(data["project"]);
     } catch (const std::exception&) {
         return std::nullopt;
     }

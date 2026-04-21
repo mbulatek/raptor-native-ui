@@ -15,6 +15,8 @@ constexpr std::string_view kPageTypes[] = {
     "transport",
     "playing",
     "recording",
+    "song",
+    "track",
     "midi_monitor",
     "status",
 };

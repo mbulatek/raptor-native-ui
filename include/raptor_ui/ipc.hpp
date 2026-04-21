@@ -16,6 +16,23 @@ struct MidiEventSummary {
     std::uint64_t timestamp_ns {0};
 };
 
+struct SequencerTrackSummary {
+    std::string id;
+    std::string name;
+    bool muted {false};
+    std::string midi_in;
+    std::string midi_out;
+    int midi_channel_in {-1};   // 0..16, -1 unknown
+    int midi_channel_out {-1};  // 1..16, -1 unknown
+};
+
+struct SequencerSongSummary {
+    bool available {false};
+    std::string id;
+    std::string title;
+    std::vector<SequencerTrackSummary> tracks;
+};
+
 struct UpstreamStatus {
     bool reachable {false};
     std::string service;
@@ -40,6 +57,8 @@ struct UpstreamStatus {
     std::optional<int> midi_in_channel;
     std::optional<int> midi_out_port;
     std::optional<int> midi_out_channel;
+    std::string recording_quantize;
+    SequencerSongSummary song;
 };
 
 struct UiSnapshot {
@@ -103,6 +122,7 @@ public:
     ControlClient& operator=(const ControlClient&) = delete;
 
     std::optional<UpstreamStatus> query_status(const std::string& request_id) const;
+    std::optional<SequencerSongSummary> query_project(const std::string& request_id) const;
 
 private:
     std::string endpoint_;
