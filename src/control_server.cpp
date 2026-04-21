@@ -41,12 +41,39 @@ json midi_json(const MidiEventSummary& midi) {
 }
 
 json sequencer_json(const UpstreamStatus& status) {
-    return {
+    json j = {
         {"reachable", status.reachable},
         {"service", status.service},
         {"summary", status.summary},
         {"timestamp_ns", status.timestamp_ns},
     };
+    if (!status.transport.empty()) {
+        j["transport"] = status.transport;
+    }
+    if (!status.recording_quantize.empty()) {
+        j["recording_quantize"] = status.recording_quantize;
+    }
+    if (status.song.available) {
+        json tracks = json::array();
+        for (const auto& track : status.song.tracks) {
+            tracks.push_back({
+                {"id", track.id},
+                {"name", track.name},
+                {"muted", track.muted},
+                {"midi_in", track.midi_in},
+                {"midi_out", track.midi_out},
+                {"midi_channel_in", track.midi_channel_in},
+                {"midi_channel_out", track.midi_channel_out},
+            });
+        }
+        j["song"] = {
+            {"available", true},
+            {"id", status.song.id},
+            {"title", status.song.title},
+            {"tracks", std::move(tracks)},
+        };
+    }
+    return j;
 }
 
 json ui_json(const UiSnapshot& ui) {
@@ -177,19 +204,58 @@ void ControlServer::poll_once() {
     }
 
     zmq_msg_t identity;
-    zmq_msg_t message;
+    zmq_msg_t frame;
     zmq_msg_init(&identity);
-    zmq_msg_init(&message);
-    if (zmq_msg_recv(&identity, impl_->router, 0) < 0 || zmq_msg_recv(&message, impl_->router, 0) < 0) {
+    zmq_msg_init(&frame);
+    if (zmq_msg_recv(&identity, impl_->router, 0) < 0) {
         zmq_msg_close(&identity);
-        zmq_msg_close(&message);
+        zmq_msg_close(&frame);
         return;
     }
 
-    const auto* raw = static_cast<const char*>(zmq_msg_data(&message));
-    const std::string request_text {raw, raw + zmq_msg_size(&message)};
+    // ROUTER receives multipart messages. For REQ clients the frames are:
+    //   [identity][empty delimiter][payload]
+    // For DEALER clients the frames are typically:
+    //   [identity][payload]
+    // We must consume the optional empty delimiter, otherwise we parse an empty
+    // body and desynchronize subsequent receives.
+    if (zmq_msg_more(&identity) == 0) {
+        zmq_msg_close(&identity);
+        zmq_msg_close(&frame);
+        return;
+    }
+
+    if (zmq_msg_recv(&frame, impl_->router, 0) < 0) {
+        zmq_msg_close(&identity);
+        zmq_msg_close(&frame);
+        return;
+    }
+
+    if (zmq_msg_size(&frame) == 0 && zmq_msg_more(&frame) != 0) {
+        zmq_msg_close(&frame);
+        zmq_msg_init(&frame);
+        if (zmq_msg_recv(&frame, impl_->router, 0) < 0) {
+            zmq_msg_close(&identity);
+            zmq_msg_close(&frame);
+            return;
+        }
+    }
+
+    // Drain any unexpected extra frames so we don't break the next request.
+    while (zmq_msg_more(&frame) != 0) {
+        zmq_msg_t junk;
+        zmq_msg_init(&junk);
+        if (zmq_msg_recv(&junk, impl_->router, 0) < 0) {
+            zmq_msg_close(&junk);
+            break;
+        }
+        zmq_msg_close(&junk);
+    }
+
+    const auto* raw = static_cast<const char*>(zmq_msg_data(&frame));
+    const std::string request_text {raw, raw + zmq_msg_size(&frame)};
     spdlog::debug("ui control req endpoint={} bytes={}", endpoint_, request_text.size());
-    zmq_msg_close(&message);
+    zmq_msg_close(&frame);
 
     std::string command = "unknown";
     std::string request_id;
@@ -326,6 +392,9 @@ void ControlServer::poll_once() {
     const auto payload = reply.dump();
     spdlog::debug("ui control reply command={} bytes={}", command, payload.size());
     (void)zmq_send(impl_->router, zmq_msg_data(&identity), zmq_msg_size(&identity), ZMQ_SNDMORE);
+    // ROUTER->REQ reply should include empty delimiter frame.
+    // Keep it unconditional to stay compatible across REQ variants.
+    (void)zmq_send(impl_->router, "", 0, ZMQ_SNDMORE);
     (void)zmq_send(impl_->router, payload.data(), payload.size(), 0);
     zmq_msg_close(&identity);
 }

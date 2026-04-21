@@ -92,6 +92,24 @@ pages:
     allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
 
+  - id: perf_song_main
+    type: song
+    title: Song
+    allowed_models: [oled_1in5_b]
+    default_variant: song_tracks
+
+  - id: perf_song_io_main
+    type: song
+    title: Song
+    allowed_models: [oled_1in5_b]
+    default_variant: song_io
+
+  - id: perf_track_main
+    type: track
+    title: Track
+    allowed_models: [oled_1in5_b]
+    default_variant: square
+
   - id: perf_playing_main
     type: playing
     title: Playing

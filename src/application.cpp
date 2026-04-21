@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -213,6 +214,8 @@ int Application::run() {
         service_snapshot.ui_control_endpoint = config_.ipc.ui_control_endpoint;
 
         auto next_sequencer_poll = std::chrono::steady_clock::now();
+        auto next_project_poll = std::chrono::steady_clock::now();
+        std::optional<SequencerSongSummary> cached_song_summary;
 
         while (true) {
             MidiEventSummary midi;
@@ -225,8 +228,19 @@ int Application::run() {
             const auto now = std::chrono::steady_clock::now();
             if (now >= next_sequencer_poll) {
                 const auto status = sequencer_client.query_status("ui-service-sequencer-status");
+                if (now >= next_project_poll) {
+                    const auto project = sequencer_client.query_project("ui-service-sequencer-project");
+                    if (project.has_value()) {
+                        cached_song_summary = std::move(project);
+                    }
+                    next_project_poll = now + std::chrono::milliseconds(1000);
+                }
                 for (auto& display : displays) {
                     if (status.has_value()) {
+                        auto merged = *status;
+                        if (cached_song_summary.has_value()) {
+                            merged.song = *cached_song_summary;
+                        }
                         if (display.snapshot.sequencer.transport != status->transport) {
                             spdlog::debug(
                                 "ui sequencer transport update display={} {} -> {}",
@@ -234,7 +248,7 @@ int Application::run() {
                                 display.snapshot.sequencer.transport,
                                 status->transport);
                         }
-                        display.snapshot.sequencer = *status;
+                        display.snapshot.sequencer = std::move(merged);
                     } else {
                         display.snapshot.sequencer.reachable = false;
                         display.snapshot.sequencer.service = "raptor-sequencer";

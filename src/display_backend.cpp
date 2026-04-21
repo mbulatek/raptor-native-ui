@@ -275,6 +275,187 @@ int clip_index_from_active_pattern(const std::string& pattern) {
     return value;
 }
 
+std::string trim_text(const std::string& value, std::size_t max_chars) {
+    if (value.size() <= max_chars) {
+        return value;
+    }
+    if (max_chars <= 3) {
+        return value.substr(0, max_chars);
+    }
+    return value.substr(0, max_chars - 3) + "...";
+}
+
+int parse_midi_port_token(const std::string& value) {
+    if (value.empty()) {
+        return -1;
+    }
+    try {
+        std::size_t consumed = 0;
+        const int parsed = std::stoi(value, &consumed, 10);
+        if (consumed == value.size()) {
+            return parsed;
+        }
+    } catch (...) {
+    }
+
+    int parsed = -1;
+    for (char c : value) {
+        if (c >= '0' && c <= '9') {
+            if (parsed < 0) {
+                parsed = c - '0';
+            } else {
+                parsed = (parsed * 10) + (c - '0');
+            }
+        } else if (parsed >= 0) {
+            break;
+        }
+    }
+    return parsed;
+}
+
+const SequencerTrackSummary* find_focused_track(const UiSnapshot& snapshot) {
+    if (!snapshot.sequencer.song.available || snapshot.sequencer.song.tracks.empty()) {
+        return nullptr;
+    }
+
+    const auto out_port = snapshot.sequencer.midi_out_port.value_or(-1);
+    const auto out_ch = snapshot.sequencer.midi_out_channel.value_or(-1);
+    if (out_port >= 0) {
+        for (const auto& track : snapshot.sequencer.song.tracks) {
+            const int track_out_port = parse_midi_port_token(track.midi_out);
+            if (track_out_port == out_port && (out_ch <= 0 || track.midi_channel_out == out_ch)) {
+                return &track;
+            }
+        }
+    }
+
+    const auto in_port = snapshot.sequencer.midi_in_port.value_or(-1);
+    const auto in_ch = snapshot.sequencer.midi_in_channel.value_or(-1);
+    if (in_port >= 0) {
+        for (const auto& track : snapshot.sequencer.song.tracks) {
+            const int track_in_port = parse_midi_port_token(track.midi_in);
+            if (track_in_port == in_port && (in_ch <= 0 || track.midi_channel_in == in_ch)) {
+                return &track;
+            }
+        }
+    }
+
+    return &snapshot.sequencer.song.tracks.front();
+}
+
+void draw_song_page(const UiSnapshot& snapshot, const std::string& /*layout*/) {
+    const bool io_variant =
+        snapshot.page_variant == "io" ||
+        snapshot.page_variant == "song_io" ||
+        snapshot.page_variant == "details";
+
+    const std::string title = snapshot.sequencer.song.available && !snapshot.sequencer.song.title.empty()
+        ? snapshot.sequencer.song.title
+        : snapshot.page_title;
+    Paint_DrawString_EN(0, 0, trim_text(title, 18).c_str(), &Font12, WHITE, BLACK);
+    Paint_DrawLine(0, 16, 127, 16, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+
+    if (!snapshot.sequencer.song.available || snapshot.sequencer.song.tracks.empty()) {
+        Paint_DrawString_EN(0, 28, "No song data", &Font12, WHITE, BLACK);
+        return;
+    }
+
+    if (!io_variant) {
+        const std::size_t max_rows = 7;
+        for (std::size_t i = 0; i < snapshot.sequencer.song.tracks.size() && i < max_rows; ++i) {
+            const auto& track = snapshot.sequencer.song.tracks[i];
+            const int y = 20 + static_cast<int>(i * 15);
+
+            const std::string name = trim_text(track.name.empty() ? track.id : track.name, 11);
+            Paint_DrawString_EN(0, static_cast<UWORD>(y), name.c_str(), &Font8, WHITE, BLACK);
+
+            Paint_DrawRectangle(78, static_cast<UWORD>(y + 2), 124, static_cast<UWORD>(y + 10), WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+            if (!track.muted) {
+                Paint_DrawRectangle(80, static_cast<UWORD>(y + 4), 122, static_cast<UWORD>(y + 8), WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+            }
+        }
+        return;
+    }
+
+    const std::string q = snapshot.sequencer.recording_quantize.empty() ? "off" : snapshot.sequencer.recording_quantize;
+    const std::size_t max_rows = 4;
+    for (std::size_t i = 0; i < snapshot.sequencer.song.tracks.size() && i < max_rows; ++i) {
+        const auto& track = snapshot.sequencer.song.tracks[i];
+        const int y = 20 + static_cast<int>(i * 26);
+
+        const std::string name = trim_text(track.name.empty() ? track.id : track.name, 14);
+        Paint_DrawString_EN(0, static_cast<UWORD>(y), name.c_str(), &Font8, WHITE, BLACK);
+
+        char io_line[64];
+        std::snprintf(
+            io_line,
+            sizeof(io_line),
+            "I%s/%d O%s/%d Q:%s",
+            track.midi_in.empty() ? "-" : track.midi_in.c_str(),
+            track.midi_channel_in,
+            track.midi_out.empty() ? "-" : track.midi_out.c_str(),
+            track.midi_channel_out,
+            q.c_str());
+        Paint_DrawString_EN(0, static_cast<UWORD>(y + 10), trim_text(io_line, 21).c_str(), &Font8, WHITE, BLACK);
+
+        if (track.muted) {
+            Paint_DrawString_EN(108, static_cast<UWORD>(y), "M", &Font8, WHITE, BLACK);
+        }
+    }
+}
+
+void draw_track_page(const UiSnapshot& snapshot, const std::string& /*layout*/) {
+    const auto* track = find_focused_track(snapshot);
+    const std::string fallback_title = snapshot.page_title.empty() ? std::string {"Track"} : snapshot.page_title;
+    const std::string track_title = track != nullptr
+        ? (track->name.empty() ? track->id : track->name)
+        : fallback_title;
+
+    Paint_DrawString_EN(0, 0, trim_text(track_title, 18).c_str(), &Font12, WHITE, BLACK);
+    Paint_DrawLine(0, 16, 127, 16, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+
+    std::string midi_in = "-";
+    std::string midi_out = "-";
+    int ch_in = -1;
+    int ch_out = -1;
+    bool muted = false;
+    if (track != nullptr) {
+        midi_in = track->midi_in.empty() ? "-" : track->midi_in;
+        midi_out = track->midi_out.empty() ? "-" : track->midi_out;
+        ch_in = track->midi_channel_in;
+        ch_out = track->midi_channel_out;
+        muted = track->muted;
+    } else {
+        if (snapshot.sequencer.midi_in_port.has_value()) midi_in = std::to_string(*snapshot.sequencer.midi_in_port);
+        if (snapshot.sequencer.midi_out_port.has_value()) midi_out = std::to_string(*snapshot.sequencer.midi_out_port);
+        ch_in = snapshot.sequencer.midi_in_channel.value_or(-1);
+        ch_out = snapshot.sequencer.midi_out_channel.value_or(-1);
+    }
+
+    const std::string q = snapshot.sequencer.recording_quantize.empty() ? "off" : snapshot.sequencer.recording_quantize;
+    const std::uint32_t bar = snapshot.sequencer.bar.value_or(1U);
+    const std::uint32_t bars_total = snapshot.sequencer.bars_total.value_or(1U);
+    const std::uint32_t beat = snapshot.sequencer.beat.value_or(1U);
+    const std::uint32_t beats_total = snapshot.sequencer.beats_per_bar.value_or(4U);
+
+    char line1[64];
+    char line2[64];
+    char line3[64];
+    char line4[64];
+    char line5[64];
+    std::snprintf(line1, sizeof(line1), "Mute: %s", muted ? "ON" : "OFF");
+    std::snprintf(line2, sizeof(line2), "In : P%s CH%d", midi_in.c_str(), ch_in);
+    std::snprintf(line3, sizeof(line3), "Out: P%s CH%d", midi_out.c_str(), ch_out);
+    std::snprintf(line4, sizeof(line4), "Q  : %s", q.c_str());
+    std::snprintf(line5, sizeof(line5), "Bar %u/%u Beat %u/%u", bar, bars_total, beat, beats_total);
+
+    Paint_DrawString_EN(0, 22, trim_text(line1, 21).c_str(), &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(0, 40, trim_text(line2, 21).c_str(), &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(0, 58, trim_text(line3, 21).c_str(), &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(0, 76, trim_text(line4, 21).c_str(), &Font12, WHITE, BLACK);
+    Paint_DrawString_EN(0, 100, trim_text(line5, 21).c_str(), &Font8, WHITE, BLACK);
+}
+
 void draw_recording_page(const UiSnapshot& snapshot, const std::string& layout) {
     if (layout == "compact") {
         Paint_DrawString_EN(0, 0, "REC", &Font8, WHITE, BLACK);
@@ -420,6 +601,10 @@ void draw_boot_page(const UiSnapshot& snapshot, const std::string& layout) {
 void draw_page(const UiSnapshot& snapshot, const std::string& layout) {
     if (snapshot.page_type == "boot") {
         draw_boot_page(snapshot, layout);
+    } else if (snapshot.page_type == "song") {
+        draw_song_page(snapshot, layout);
+    } else if (snapshot.page_type == "track") {
+        draw_track_page(snapshot, layout);
     } else if (snapshot.page_type == "transport") {
         draw_transport_page(snapshot, layout);
     } else if (snapshot.page_type == "midi_monitor") {
