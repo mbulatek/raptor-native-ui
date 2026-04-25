@@ -113,7 +113,7 @@ This lets you switch the whole UI personality with one control command instead o
 
 ## IPC
 
-The service mirrors the JSON + ZeroMQ style used by `raptor-midi-io-service`.
+The service mirrors the JSON + ZeroMQ style used by `raptor-engine`.
 
 ### Published topics
 

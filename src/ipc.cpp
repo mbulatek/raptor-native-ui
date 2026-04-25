@@ -425,7 +425,7 @@ ControlClient::ControlClient(std::string endpoint) : endpoint_(std::move(endpoin
 ControlClient::~ControlClient() = default;
 
 std::optional<UpstreamStatus> ControlClient::query_status(const std::string& request_id) const {
-    spdlog::debug("sequencer status query endpoint={} request_id={}", endpoint_, request_id);
+    spdlog::trace("sequencer status query endpoint={} request_id={}", endpoint_, request_id);
     constexpr int timeout_ms = 100;
     const auto reply_opt = request_control_json(endpoint_, json{{"command", "status"}, {"request_id", request_id}}, timeout_ms);
     if (!reply_opt.has_value()) {

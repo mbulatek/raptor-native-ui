@@ -39,7 +39,7 @@ struct UpstreamStatus {
     std::string summary;
     std::uint64_t timestamp_ns {0};
 
-    // Optional snapshot details from raptor-seq-service control/status.
+    // Optional snapshot details from raptor-engine sequencer control/status.
     std::optional<std::uint64_t> tick;
     std::optional<double> bpm;
     std::string transport;
