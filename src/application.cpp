@@ -151,7 +151,7 @@ void maybe_override_transport_page(UiSnapshot& snapshot, const PageController& c
     }
 
     if (snapshot.page_id != transport_page->id) {
-        spdlog::info(
+        spdlog::trace(
             "ui page override display={} from={}({}) to={}({}) transport_raw='{}'",
             snapshot.display_id,
             snapshot.page_id,

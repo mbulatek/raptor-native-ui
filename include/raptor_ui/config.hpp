@@ -57,9 +57,9 @@ struct SceneConfig {
 struct IpcConfig {
     std::string ui_events_endpoint {"ipc:///run/raptor-ui/events.zmq"};
     std::string ui_control_endpoint {"ipc:///run/raptor-ui/control.zmq"};
-    std::string midi_events_endpoint {"ipc:///run/raptor-midi-io/events.zmq"};
-    std::string midi_control_endpoint {"ipc:///run/raptor-midi-io/control.zmq"};
-    std::string sequencer_control_endpoint {"ipc:///run/raptor-seq/control.zmq"};
+    std::string midi_events_endpoint {"ipc:///run/raptor-engine/midi-events.zmq"};
+    std::string midi_control_endpoint {"ipc:///run/raptor-engine/midi-control.zmq"};
+    std::string sequencer_control_endpoint {"ipc:///run/raptor-engine/seq-control.zmq"};
 };
 
 struct LoggingConfig {
