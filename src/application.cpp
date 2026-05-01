@@ -171,11 +171,10 @@ Application::Application(ServiceConfig config) : config_(std::move(config)) {}
 int Application::run() {
     try {
         spdlog::debug(
-            "ui start displays={} ui_events={} ui_control={} midi_events={} seq_control={}",
+            "ui start displays={} ui_events={} ui_control={} seq_control={}",
             config_.displays.size(),
             config_.ipc.ui_events_endpoint,
             config_.ipc.ui_control_endpoint,
-            config_.ipc.midi_events_endpoint,
             config_.ipc.sequencer_control_endpoint);
 
         auto page_controller = std::make_shared<PageController>(config_);
@@ -205,7 +204,6 @@ int Application::run() {
         }
 
         EventPublisher publisher {config_.ipc.ui_events_endpoint, "ui.snapshot"};
-        MidiEventSubscriber midi_subscriber {config_.ipc.midi_events_endpoint};
         ControlClient sequencer_client {config_.ipc.sequencer_control_endpoint};
         ControlServer control_server {config_.ipc.ui_control_endpoint, config_, page_controller};
 
@@ -218,13 +216,6 @@ int Application::run() {
         std::optional<SequencerSongSummary> cached_song_summary;
 
         while (true) {
-            MidiEventSummary midi;
-            if (midi_subscriber.poll_once(midi)) {
-                for (auto& display : displays) {
-                    display.snapshot.last_midi = midi;
-                }
-            }
-
             const auto now = std::chrono::steady_clock::now();
             if (now >= next_sequencer_poll) {
                 const auto status = sequencer_client.query_status("ui-service-sequencer-status");

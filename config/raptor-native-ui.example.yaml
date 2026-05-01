@@ -72,7 +72,7 @@ pages:
     allowed_models: [oled_1in5, oled_1in5_b]
     default_variant: square
     image:
-      path: /usr/share/raptor-ui-service/images/boot-main.bmp
+      path: /usr/share/raptor-native-ui/images/boot-main.bmp
       x: 0
       y: 0
 
@@ -82,7 +82,7 @@ pages:
     allowed_models: [oled_0in91]
     default_variant: compact
     image:
-      path: /usr/share/raptor-ui-service/images/boot-mini.bmp
+      path: /usr/share/raptor-native-ui/images/boot-mini.bmp
       x: 0
       y: 0
 
