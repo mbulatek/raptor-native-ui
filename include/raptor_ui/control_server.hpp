@@ -11,7 +11,7 @@
 namespace raptor::ui {
 
 struct ServiceSnapshot {
-    std::string service_name {"raptor-ui-service"};
+    std::string service_name {"raptor-native-ui"};
     std::string ui_events_endpoint;
     std::string ui_control_endpoint;
     std::vector<UiSnapshot> displays;

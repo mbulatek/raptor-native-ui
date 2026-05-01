@@ -1,6 +1,6 @@
-# Raptor UI Service
+# Raptor Native UI
 
-`raptor-ui-service` is a background UI daemon for Raspberry Pi that renders sequencer and MIDI state onto one or more small OLED displays.
+`raptor-native-ui` is a background UI daemon for Raspberry Pi that renders sequencer and MIDI state onto one or more small OLED displays.
 
 ## Architecture
 
@@ -67,7 +67,7 @@ Pages may also declare an optional monochrome BMP image:
 
 ```yaml
 image:
-  path: /usr/share/raptor-ui-service/images/boot-main.bmp
+  path: /usr/share/raptor-native-ui/images/boot-main.bmp
   x: 0
   y: 0
 ```

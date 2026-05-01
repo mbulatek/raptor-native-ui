@@ -17,7 +17,7 @@ namespace {
 using json = nlohmann::json;
 
 constexpr char kSchemaVersion[] = "1.0";
-constexpr char kServiceName[] = "raptor-ui-service";
+constexpr char kServiceName[] = "raptor-native-ui";
 constexpr char kMidiTopic[] = "midi.packet";
 
 std::filesystem::path endpoint_directory(const std::string& endpoint) {

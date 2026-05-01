@@ -13,10 +13,10 @@ int main(int argc, char** argv) {
     try {
         const std::string config_path = argc > 1
             ? argv[1]
-            : "/etc/raptor-ui-service/raptor-ui-service.yaml";
+            : "/etc/raptor-native-ui/raptor-native-ui.yaml";
 
         auto config = raptor::ui::load_config(config_path);
-        raptor::ui::initialize_logging("raptor-splash-screen", config.logging.level);
+        raptor::ui::initialize_logging("raptor-native-splash-screen", config.logging.level);
         spdlog::info("loading splash configuration from {}", config_path);
         raptor::ui::PageController page_controller {config};
 
@@ -37,8 +37,8 @@ int main(int argc, char** argv) {
 
         return 0;
     } catch (const std::exception& ex) {
-        raptor::ui::initialize_logging("raptor-splash-screen", "info");
-        spdlog::critical("raptor-splash-screen failed: {}", ex.what());
+        raptor::ui::initialize_logging("raptor-native-splash-screen", "info");
+        spdlog::critical("raptor-native-splash-screen failed: {}", ex.what());
         return 1;
     }
 }

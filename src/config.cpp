@@ -243,7 +243,6 @@ void validate_config(ServiceConfig& config) {
     }
     if (config.ipc.ui_events_endpoint.empty() ||
         config.ipc.ui_control_endpoint.empty() ||
-        config.ipc.midi_events_endpoint.empty() ||
         config.ipc.sequencer_control_endpoint.empty()) {
         throw std::runtime_error("IPC endpoints must not be empty");
     }

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(raptor-ui-service VERSION 0.1.0 LANGUAGES C CXX)
+project(raptor-native-ui VERSION 0.1.0 LANGUAGES C CXX)
 
 option(RAPTOR_UI_BUILD_SERVICE "Build the UI background service" ON)
 option(RAPTOR_UI_BUILD_SPLASH "Build the splash-screen helper" ON)
@@ -116,13 +116,13 @@ target_link_libraries(raptor_ui_service_core
 )
 
 if(RAPTOR_UI_BUILD_SERVICE)
-    add_executable(raptor-ui-service src/main.cpp)
-    target_link_libraries(raptor-ui-service PRIVATE raptor_ui_service_core)
+    add_executable(raptor-native-ui src/main.cpp)
+    target_link_libraries(raptor-native-ui PRIVATE raptor_ui_service_core)
 endif()
 
 if(RAPTOR_UI_BUILD_SPLASH)
-    add_executable(raptor-splash-screen src/splash_main.cpp)
-    target_link_libraries(raptor-splash-screen PRIVATE raptor_ui_core)
+    add_executable(raptor-native-splash-screen src/splash_main.cpp)
+    target_link_libraries(raptor-native-splash-screen PRIVATE raptor_ui_core)
 endif()
 
 install(TARGETS waveshare_vendor raptor_ui_core raptor_ui_service_core
@@ -132,21 +132,21 @@ install(TARGETS waveshare_vendor raptor_ui_core raptor_ui_service_core
 )
 
 if(RAPTOR_UI_BUILD_SERVICE)
-    install(TARGETS raptor-ui-service RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(TARGETS raptor-native-ui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 if(RAPTOR_UI_BUILD_SPLASH)
-    install(TARGETS raptor-splash-screen RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(TARGETS raptor-native-splash-screen RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(RAPTOR_UI_INSTALL_DEFAULT_CONFIG)
-    install(FILES config/raptor-ui-service.example.yaml
-        DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/raptor-ui-service
-        RENAME raptor-ui-service.yaml
+    install(FILES config/raptor-native-ui.example.yaml
+        DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/raptor-native-ui
+        RENAME raptor-native-ui.yaml
     )
 endif()
 
 if(RAPTOR_UI_INSTALL_SYSTEMD_UNIT)
-    install(FILES systemd/raptor-ui-service.service DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/system)
+    install(FILES systemd/raptor-native-ui.service DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/system)
 endif()

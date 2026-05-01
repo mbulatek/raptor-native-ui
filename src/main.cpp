@@ -36,11 +36,11 @@ int main(int argc, char** argv) {
         }
 
         if (config_path.empty()) {
-            config_path = "/etc/raptor-ui-service/raptor-ui-service.yaml";
+            config_path = "/etc/raptor-native-ui/raptor-native-ui.yaml";
         }
 
         auto config = raptor::ui::load_config(config_path);
-        raptor::ui::initialize_logging("raptor-ui-service", config.logging.level);
+        raptor::ui::initialize_logging("raptor-native-ui", config.logging.level);
         spdlog::info("loading config from {}", config_path);
 
         if (!once) {
@@ -77,8 +77,8 @@ int main(int argc, char** argv) {
 
         return 0;
     } catch (const std::exception& ex) {
-        raptor::ui::initialize_logging("raptor-ui-service", "info");
-        spdlog::critical("raptor-ui-service failed: {}", ex.what());
+        raptor::ui::initialize_logging("raptor-native-ui", "info");
+        spdlog::critical("raptor-native-ui failed: {}", ex.what());
         return 1;
     }
 }

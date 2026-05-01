@@ -3,7 +3,7 @@
  *
  * This file preserves the vendor-facing API name expected by the copied
  * Waveshare sources, but the implementation behind it is maintained by the
- * raptor-ui-service project and uses libgpiod + spidev.
+ * raptor-native-ui project and uses libgpiod + spidev.
  */
 #ifndef _DEV_CONFIG_H_
 #define _DEV_CONFIG_H_
