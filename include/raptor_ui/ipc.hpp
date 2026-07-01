@@ -22,14 +22,19 @@ struct SequencerTrackSummary {
     bool muted {false};
     std::string midi_in;
     std::string midi_out;
+    std::string midi_in_label;
+    std::string midi_out_label;
     int midi_channel_in {-1};   // 0..16, -1 unknown
     int midi_channel_out {-1};  // 1..16, -1 unknown
+    bool send_sync_enabled {false};
 };
 
 struct SequencerSongSummary {
     bool available {false};
     std::string id;
     std::string title;
+    int slot {-1};
+    std::string active_track_id;
     std::vector<SequencerTrackSummary> tracks;
 };
 
@@ -41,9 +46,20 @@ struct UpstreamStatus {
 
     // Optional snapshot details from raptor-engine sequencer control/status.
     std::optional<std::uint64_t> tick;
+    std::optional<std::uint64_t> revision_epoch;
+    std::optional<std::uint64_t> song_revision;
+    std::optional<std::uint64_t> pattern_revision;
     std::optional<double> bpm;
+    std::optional<std::uint32_t> ppqn;
     std::string transport;
     std::string active_pattern;
+    std::string input_context {"song"};
+    std::uint32_t ui_scroll_offset {0};
+    bool ui_editing {false};
+    std::string clock_source;
+    std::string clock_midi_source;
+    bool metronome_enabled {false};
+    std::string metronome_alsa_device;
     std::optional<std::uint32_t> active_step;
 
     std::optional<std::uint32_t> bar;
@@ -58,6 +74,7 @@ struct UpstreamStatus {
     std::optional<int> midi_out_port;
     std::optional<int> midi_out_channel;
     std::string recording_quantize;
+    std::string loop_quantize;
     SequencerSongSummary song;
 };
 

@@ -61,6 +61,16 @@ void apply_page(UiSnapshot& snapshot, const PageConfig& page) {
     snapshot.page_image_y = page.image.y;
 }
 
+void apply_context_fallback_page(UiSnapshot& snapshot, const std::string& context) {
+    snapshot.page_id = "context_" + context;
+    snapshot.page_type = context;
+    snapshot.page_title = context == "song" ? "Song" : (context == "track" ? "Track" : "Settings");
+    snapshot.page_variant = "square";
+    snapshot.page_image_path.clear();
+    snapshot.page_image_x = 0;
+    snapshot.page_image_y = 0;
+}
+
 std::string normalize_transport(std::string_view transport) {
     std::string normalized;
     normalized.reserve(transport.size());
@@ -108,7 +118,7 @@ const char* overlay_page_type(TransportOverlay overlay) {
     }
 }
 
-void maybe_override_transport_page(UiSnapshot& snapshot, const PageController& controller) {
+[[maybe_unused]] void maybe_override_transport_page(UiSnapshot& snapshot, const PageController& controller) {
     // During active transport states we can override the assigned page with dedicated
     // transport pages (playing/recording). When transport returns to stopped, assignment
     // is restored by apply_page_assignment() in the next loop iteration.
@@ -164,6 +174,35 @@ void maybe_override_transport_page(UiSnapshot& snapshot, const PageController& c
     apply_page(snapshot, *transport_page);
 }
 
+void maybe_apply_context_page(UiSnapshot& snapshot, const PageController& controller) {
+    const std::string& context = snapshot.sequencer.input_context;
+    if (context != "song" && context != "track" && context != "settings") {
+        return;
+    }
+    if (snapshot.page_type == context) {
+        return;
+    }
+
+    const auto* context_page = find_page_for_display_by_type(controller, snapshot.display_id, context);
+    if (context_page == nullptr) {
+        static std::unordered_map<std::string, std::uint64_t> missing_context_page_counts;
+        auto& count = missing_context_page_counts[snapshot.display_id + "|" + context];
+        ++count;
+        if (count == 1 || (count % 100) == 0) {
+            spdlog::warn(
+                "ui context page missing display={} model={} context={} misses={}",
+                snapshot.display_id,
+                snapshot.display_model,
+                context,
+                count);
+        }
+        apply_context_fallback_page(snapshot, context);
+        return;
+    }
+
+    apply_page(snapshot, *context_page);
+}
+
 }  // namespace
 
 Application::Application(ServiceConfig config) : config_(std::move(config)) {}
@@ -214,23 +253,48 @@ int Application::run() {
         auto next_sequencer_poll = std::chrono::steady_clock::now();
         auto next_project_poll = std::chrono::steady_clock::now();
         std::optional<SequencerSongSummary> cached_song_summary;
+        std::optional<std::uint64_t> cached_song_revision;
 
         while (true) {
             const auto now = std::chrono::steady_clock::now();
             if (now >= next_sequencer_poll) {
                 const auto status = sequencer_client.query_status("ui-service-sequencer-status");
-                if (now >= next_project_poll) {
-                    const auto project = sequencer_client.query_project("ui-service-sequencer-project");
-                    if (project.has_value()) {
-                        cached_song_summary = std::move(project);
+                if (status.has_value()) {
+                    const bool song_changed =
+                        status->song_revision.has_value() &&
+                        (!cached_song_revision.has_value() || *cached_song_revision != *status->song_revision);
+                    if (song_changed || now >= next_project_poll) {
+                        if (song_changed) {
+                            cached_song_summary.reset();
+                            cached_song_revision.reset();
+                        }
+                        const auto project = sequencer_client.query_project("ui-service-sequencer-project");
+                        if (project.has_value()) {
+                            cached_song_summary = std::move(project);
+                            if (status->song_revision.has_value()) {
+                                cached_song_revision = *status->song_revision;
+                            }
+                        }
+                        next_project_poll = now + std::chrono::milliseconds(song_changed ? 100 : 1000);
                     }
-                    next_project_poll = now + std::chrono::milliseconds(1000);
                 }
                 for (auto& display : displays) {
                     if (status.has_value()) {
                         auto merged = *status;
                         if (cached_song_summary.has_value()) {
                             merged.song = *cached_song_summary;
+                            if (!status->song.id.empty()) {
+                                merged.song.id = status->song.id;
+                            }
+                            if (!status->song.title.empty()) {
+                                merged.song.title = status->song.title;
+                            }
+                            if (status->song.slot > 0) {
+                                merged.song.slot = status->song.slot;
+                            }
+                            if (!status->song.active_track_id.empty()) {
+                                merged.song.active_track_id = status->song.active_track_id;
+                            }
                         }
                         if (display.snapshot.sequencer.transport != status->transport) {
                             spdlog::debug(
@@ -252,7 +316,7 @@ int Application::run() {
 
             for (auto& display : displays) {
                 apply_page_assignment(display.snapshot, *page_controller);
-                maybe_override_transport_page(display.snapshot, *page_controller);
+                maybe_apply_context_page(display.snapshot, *page_controller);
                 if (now >= display.next_render) {
                     ++display.snapshot.render_count;
                     spdlog::trace(

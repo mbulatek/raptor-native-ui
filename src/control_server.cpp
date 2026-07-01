@@ -53,6 +53,9 @@ json sequencer_json(const UpstreamStatus& status) {
     if (!status.recording_quantize.empty()) {
         j["recording_quantize"] = status.recording_quantize;
     }
+    if (!status.loop_quantize.empty()) {
+        j["loop_quantize"] = status.loop_quantize;
+    }
     if (status.song.available) {
         json tracks = json::array();
         for (const auto& track : status.song.tracks) {
@@ -62,8 +65,11 @@ json sequencer_json(const UpstreamStatus& status) {
                 {"muted", track.muted},
                 {"midi_in", track.midi_in},
                 {"midi_out", track.midi_out},
+                {"midi_in_label", track.midi_in_label},
+                {"midi_out_label", track.midi_out_label},
                 {"midi_channel_in", track.midi_channel_in},
                 {"midi_channel_out", track.midi_channel_out},
+                {"send_sync_enabled", track.send_sync_enabled},
             });
         }
         j["song"] = {

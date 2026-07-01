@@ -110,6 +110,12 @@ pages:
     allowed_models: [oled_1in5_b]
     default_variant: square
 
+  - id: perf_settings_main
+    type: settings
+    title: Settings
+    allowed_models: [oled_1in5_b]
+    default_variant: square
+
   - id: perf_playing_main
     type: playing
     title: Playing
@@ -184,7 +190,7 @@ pages:
 
 assignments:
   - display_id: main
-    page_id: perf_transport_main
+    page_id: perf_song_main
   - display_id: sidecar
     page_id: perf_midi_sidecar
   - display_id: mini
@@ -195,7 +201,7 @@ scenes:
     title: Performance
     assignments:
       - display_id: main
-        page_id: perf_transport_main
+        page_id: perf_song_main
       - display_id: sidecar
         page_id: perf_midi_sidecar
       - display_id: mini
