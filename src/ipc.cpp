@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -19,6 +20,11 @@ using json = nlohmann::json;
 constexpr char kSchemaVersion[] = "1.0";
 constexpr char kServiceName[] = "raptor-native-ui";
 constexpr char kMidiTopic[] = "midi.packet";
+
+struct MidiPortLabelMap {
+    std::unordered_map<std::string, std::string> inputs;
+    std::unordered_map<std::string, std::string> outputs;
+};
 
 std::filesystem::path endpoint_directory(const std::string& endpoint) {
     constexpr std::string_view prefix {"ipc://"};
@@ -57,11 +63,29 @@ json sequencer_json(const UpstreamStatus& status) {
     if (status.bpm.has_value()) {
         j["bpm"] = *status.bpm;
     }
+    if (status.ppqn.has_value()) {
+        j["ppqn"] = *status.ppqn;
+    }
     if (!status.transport.empty()) {
         j["transport"] = status.transport;
     }
     if (!status.active_pattern.empty()) {
         j["active_pattern"] = status.active_pattern;
+    }
+    if (!status.input_context.empty()) {
+        j["input_context"] = status.input_context;
+    }
+    j["ui_scroll_offset"] = status.ui_scroll_offset;
+    j["ui_editing"] = status.ui_editing;
+    if (!status.clock_source.empty()) {
+        j["clock_source"] = status.clock_source;
+    }
+    if (!status.clock_midi_source.empty()) {
+        j["clock_midi_source"] = status.clock_midi_source;
+    }
+    j["metronome_enabled"] = status.metronome_enabled;
+    if (!status.metronome_alsa_device.empty()) {
+        j["metronome_alsa_device"] = status.metronome_alsa_device;
     }
     if (status.active_step.has_value()) {
         j["active_step"] = *status.active_step;
@@ -99,6 +123,9 @@ json sequencer_json(const UpstreamStatus& status) {
     if (!status.recording_quantize.empty()) {
         j["recording_quantize"] = status.recording_quantize;
     }
+    if (!status.loop_quantize.empty()) {
+        j["loop_quantize"] = status.loop_quantize;
+    }
     if (status.song.available) {
         json tracks = json::array();
         for (const auto& track : status.song.tracks) {
@@ -108,14 +135,19 @@ json sequencer_json(const UpstreamStatus& status) {
                 {"muted", track.muted},
                 {"midi_in", track.midi_in},
                 {"midi_out", track.midi_out},
+                {"midi_in_label", track.midi_in_label},
+                {"midi_out_label", track.midi_out_label},
                 {"midi_channel_in", track.midi_channel_in},
                 {"midi_channel_out", track.midi_channel_out},
+                {"send_sync_enabled", track.send_sync_enabled},
             });
         }
         j["song"] = {
             {"available", true},
             {"id", status.song.id},
             {"title", status.song.title},
+            {"slot", status.song.slot},
+            {"active_track_id", status.song.active_track_id},
             {"tracks", std::move(tracks)},
         };
     }
@@ -183,8 +215,15 @@ std::optional<json> request_control_json(const std::string& endpoint, const json
         return std::nullopt;
     }
 
-    std::vector<char> buffer(64 * 1024, 0);
-    const auto size = zmq_recv(socket, buffer.data(), buffer.size(), 0);
+    zmq_msg_t reply_msg;
+    zmq_msg_init(&reply_msg);
+    const auto size = zmq_msg_recv(&reply_msg, socket, 0);
+    std::string reply_text;
+    if (size > 0) {
+        const auto* data = static_cast<const char*>(zmq_msg_data(&reply_msg));
+        reply_text.assign(data, data + zmq_msg_size(&reply_msg));
+    }
+    zmq_msg_close(&reply_msg);
     zmq_close(socket);
     zmq_ctx_term(context);
     if (size <= 0) {
@@ -192,10 +231,76 @@ std::optional<json> request_control_json(const std::string& endpoint, const json
     }
 
     try {
-        return json::parse(std::string(buffer.data(), buffer.data() + size));
+        return json::parse(reply_text);
     } catch (const std::exception&) {
         return std::nullopt;
     }
+}
+
+std::string json_port_token(const json& value) {
+    if (value.is_string()) {
+        return value.get<std::string>();
+    }
+    if (value.is_number_integer()) {
+        return std::to_string(value.get<int>());
+    }
+    return {};
+}
+
+void add_label(std::unordered_map<std::string, std::string>& labels, const std::string& key, const std::string& label) {
+    if (!key.empty() && !label.empty()) {
+        labels[key] = label;
+    }
+}
+
+MidiPortLabelMap midi_port_labels_from_project(const json& project_json) {
+    MidiPortLabelMap labels;
+    const auto ports_it = project_json.find("midi_ports");
+    if (ports_it == project_json.end() || !ports_it->is_array()) {
+        return labels;
+    }
+
+    for (const auto& p : *ports_it) {
+        if (!p.is_object()) {
+            continue;
+        }
+        const std::string global_port = p.contains("global_port") ? json_port_token(p.at("global_port")) : std::string {};
+        const std::string device_id = p.value("device_id", std::string {});
+        const std::string input_label = p.value("input_label", std::string {});
+        const std::string output_label = p.value("output_label", std::string {});
+
+        add_label(labels.inputs, global_port, input_label.empty() ? output_label : input_label);
+        add_label(labels.outputs, global_port, output_label.empty() ? input_label : output_label);
+        add_label(labels.inputs, device_id, input_label.empty() ? output_label : input_label);
+        add_label(labels.outputs, device_id, output_label.empty() ? input_label : output_label);
+    }
+
+    return labels;
+}
+
+std::string midi_label_for(
+    const MidiPortLabelMap& labels,
+    const std::string& token,
+    const std::string& device_id,
+    const bool input) {
+    const auto& map = input ? labels.inputs : labels.outputs;
+    if (!device_id.empty()) {
+        if (const auto it = map.find(device_id); it != map.end()) {
+            return it->second;
+        }
+    }
+    if (!token.empty()) {
+        if (const auto it = map.find(token); it != map.end()) {
+            return it->second;
+        }
+    }
+    if (token == "-1" || token == "any") {
+        return "ANY";
+    }
+    if (token == "auto") {
+        return "Auto";
+    }
+    return {};
 }
 
 SequencerSongSummary parse_song_summary_from_project(const json& project_json) {
@@ -210,6 +315,9 @@ SequencerSongSummary parse_song_summary_from_project(const json& project_json) {
     const auto& s = project_json["song"];
     song.id = s.value("id", std::string{});
     song.title = s.value("title", std::string{});
+    song.slot = s.value("slot_index", -1);
+    song.active_track_id = project_json.value("currentTrackId", std::string{});
+    const auto midi_labels = midi_port_labels_from_project(project_json);
 
     if (s.contains("tracks") && s["tracks"].is_array()) {
         for (const auto& t : s["tracks"]) {
@@ -222,6 +330,17 @@ SequencerSongSummary parse_song_summary_from_project(const json& project_json) {
             track.muted = t.value("muted", false);
             track.midi_in = t.value("midi_in", std::string{});
             track.midi_out = t.value("midi_out", std::string{});
+            track.send_sync_enabled = t.value("send_sync_enabled", false);
+            track.midi_in_label = midi_label_for(
+                midi_labels,
+                track.midi_in,
+                t.value("midi_in_device_id", std::string{}),
+                true);
+            track.midi_out_label = midi_label_for(
+                midi_labels,
+                track.midi_out,
+                t.value("midi_out_device_id", std::string{}),
+                false);
             if (t.contains("midi_channel_in")) {
                 track.midi_channel_in = t.value("midi_channel_in", -1);
             } else if (t.contains("midi_channel")) {
@@ -448,11 +567,35 @@ std::optional<UpstreamStatus> ControlClient::query_status(const std::string& req
             if (snap.contains("tick")) {
                 status.tick = snap.value("tick", static_cast<std::uint64_t>(0));
             }
+            if (snap.contains("revision_epoch")) {
+                status.revision_epoch = snap.value("revision_epoch", static_cast<std::uint64_t>(0));
+            }
+            if (snap.contains("song_revision")) {
+                status.song_revision = snap.value("song_revision", static_cast<std::uint64_t>(0));
+            }
+            if (snap.contains("pattern_revision")) {
+                status.pattern_revision = snap.value("pattern_revision", static_cast<std::uint64_t>(0));
+            }
             if (snap.contains("bpm")) {
                 status.bpm = snap.value("bpm", 0.0);
             }
+            if (snap.contains("ppqn")) {
+                status.ppqn = snap.value("ppqn", static_cast<std::uint32_t>(0));
+            }
             status.transport = snap.value("transport", "");
             status.active_pattern = snap.value("active_pattern", "");
+            status.input_context = snap.value("input_context", std::string{"song"});
+            status.ui_scroll_offset = snap.value("ui_scroll_offset", static_cast<std::uint32_t>(0));
+            status.ui_editing = snap.value("ui_editing", false);
+            status.clock_source = snap.value("clock_source", std::string{});
+            status.clock_midi_source = snap.value("clock_midi_source", std::string{});
+            status.metronome_enabled = snap.value("metronome_enabled", false);
+            status.metronome_alsa_device = snap.value("metronome_alsa_device", std::string{});
+            status.song.id = snap.value("current_song_id", std::string{});
+            status.song.title = snap.value("current_song_title", std::string{});
+            status.song.slot = snap.value("current_song_slot", -1);
+            status.song.active_track_id = snap.value("active_track_id", std::string{});
+            status.song.available = !status.song.id.empty() || !status.song.title.empty();
             if (snap.contains("active_step")) {
                 status.active_step = snap.value("active_step", static_cast<std::uint32_t>(0));
             }
@@ -490,6 +633,9 @@ std::optional<UpstreamStatus> ControlClient::query_status(const std::string& req
             if (snap.contains("recording_quantize")) {
                 status.recording_quantize = snap.value("recording_quantize", std::string{});
             }
+            if (snap.contains("loop_quantize")) {
+                status.loop_quantize = snap.value("loop_quantize", std::string{});
+            }
         }
 
         if (status.reachable && reply.contains("data")) {
@@ -505,7 +651,7 @@ std::optional<UpstreamStatus> ControlClient::query_status(const std::string& req
 
 std::optional<SequencerSongSummary> ControlClient::query_project(const std::string& request_id) const {
     spdlog::debug("sequencer project query endpoint={} request_id={}", endpoint_, request_id);
-    constexpr int timeout_ms = 150;
+    constexpr int timeout_ms = 750;
     const auto reply_opt = request_control_json(endpoint_, json{{"command", "get-project"}, {"request_id", request_id}}, timeout_ms);
     if (!reply_opt.has_value()) {
         return std::nullopt;

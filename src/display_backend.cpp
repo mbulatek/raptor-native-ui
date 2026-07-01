@@ -285,6 +285,173 @@ std::string trim_text(const std::string& value, std::size_t max_chars) {
     return value.substr(0, max_chars - 3) + "...";
 }
 
+std::size_t chars_for_width(const UWORD width_px, const sFONT& font) {
+    if (font.Width == 0) {
+        return 1;
+    }
+    return std::max<std::size_t>(1U, static_cast<std::size_t>(width_px / font.Width));
+}
+
+std::string scroll_text_window(const std::string& value, const std::size_t visible_chars, const std::uint64_t render_count) {
+    if (visible_chars == 0 || value.size() <= visible_chars) {
+        return value;
+    }
+
+    constexpr std::uint64_t frames_per_step = 2;
+    constexpr std::uint64_t hold_steps = 4;
+    const std::uint64_t range = static_cast<std::uint64_t>(value.size() - visible_chars);
+    const std::uint64_t cycle = (hold_steps * 2U) + (range * 2U);
+    const std::uint64_t phase = cycle == 0 ? 0 : ((render_count / frames_per_step) % cycle);
+
+    std::uint64_t offset = 0;
+    if (phase < hold_steps) {
+        offset = 0;
+    } else if (phase < hold_steps + range) {
+        offset = phase - hold_steps;
+    } else if (phase < (hold_steps * 2U) + range) {
+        offset = range;
+    } else {
+        offset = range - (phase - ((hold_steps * 2U) + range));
+    }
+
+    return value.substr(static_cast<std::size_t>(offset), visible_chars);
+}
+
+std::string display_midi_port(const std::string& token, const std::string& label) {
+    if (!label.empty()) {
+        return label;
+    }
+    if (token.empty()) {
+        return "-";
+    }
+    if (token == "-1" || token == "any") {
+        return "ANY";
+    }
+    if (token == "auto") {
+        return "-";
+    }
+    return token;
+}
+
+std::string display_midi_channel(const int channel) {
+    if (channel == 0) {
+        return "ANY";
+    }
+    if (channel < 0) {
+        return "-";
+    }
+    return std::to_string(channel);
+}
+
+std::string display_clock_source(const std::string& value) {
+    if (value == "sync_in") {
+        return "Sync In";
+    }
+    if (value == "midi_clock_in") {
+        return "MIDI Clock In";
+    }
+    return "Internal BPM";
+}
+
+std::string display_clock_midi_source(const std::string& value) {
+    if (value.empty() || value == "any" || value == "-1") {
+        return "Any";
+    }
+    return value;
+}
+
+std::string display_audio_device(const std::string& value) {
+    if (value.empty()) {
+        return "default";
+    }
+    return value;
+}
+
+std::string display_checkbox(const bool enabled) {
+    return enabled ? "[x]" : "[ ]";
+}
+
+struct DisplayField {
+    std::string label;
+    std::string value;
+};
+
+void draw_editable_field_rows(const std::vector<DisplayField>& fields,
+                              const std::size_t selected,
+                              const bool editing,
+                              const bool compact,
+                              const UWORD label_width,
+                              const std::uint64_t render_count) {
+    sFONT* font = compact ? &Font8 : &Font12;
+    const UWORD row_h = compact ? 11 : 18;
+    const UWORD y0 = compact ? 20 : 24;
+    const UWORD text_pad_y = compact ? 1 : 2;
+    const std::size_t max_chars = compact ? 20U : 21U;
+    const UWORD value_x = static_cast<UWORD>(label_width + 3U);
+    const std::size_t label_chars = chars_for_width(label_width > 4U ? static_cast<UWORD>(label_width - 4U) : label_width, *font);
+    const std::size_t value_chars = chars_for_width(value_x < 125U ? static_cast<UWORD>(125U - value_x) : 1U, *font);
+
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+        const UWORD y = static_cast<UWORD>(y0 + static_cast<UWORD>(i) * row_h);
+        const bool active = i == selected;
+        const std::string line = fields[i].label + ": " + fields[i].value;
+
+        if (active && editing) {
+            Paint_DrawRectangle(0, y, label_width, static_cast<UWORD>(y + row_h - 1), WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+            Paint_DrawString_EN(
+                2,
+                static_cast<UWORD>(y + text_pad_y),
+                trim_text(fields[i].label, 8).c_str(),
+                font,
+                BLACK,
+                WHITE);
+            Paint_DrawRectangle(value_x, y, 127, static_cast<UWORD>(y + row_h - 1), WHITE, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+            Paint_DrawString_EN(
+                static_cast<UWORD>(value_x + 2U),
+                static_cast<UWORD>(y + text_pad_y),
+                trim_text(fields[i].value, compact ? 12U : 13U).c_str(),
+                font,
+                WHITE,
+                BLACK);
+            continue;
+        }
+
+        if (active) {
+            Paint_DrawRectangle(0, y, 127, static_cast<UWORD>(y + row_h - 1), WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+            Paint_DrawString_EN(
+                2,
+                static_cast<UWORD>(y + text_pad_y),
+                trim_text(fields[i].label + ":", label_chars).c_str(),
+                font,
+                BLACK,
+                WHITE);
+            Paint_DrawString_EN(
+                value_x,
+                static_cast<UWORD>(y + text_pad_y),
+                scroll_text_window(fields[i].value, value_chars, render_count).c_str(),
+                font,
+                BLACK,
+                WHITE);
+            continue;
+        }
+
+        Paint_DrawString_EN(
+            2,
+            static_cast<UWORD>(y + text_pad_y),
+            trim_text(line, max_chars).c_str(),
+            font,
+            active ? BLACK : WHITE,
+            active ? WHITE : BLACK);
+    }
+}
+
+std::size_t scroll_start_index(const std::uint32_t offset, const std::size_t total, const std::size_t visible) {
+    if (total <= visible) {
+        return 0;
+    }
+    return std::min<std::size_t>(static_cast<std::size_t>(offset), total - visible);
+}
+
 int parse_midi_port_token(const std::string& value) {
     if (value.empty()) {
         return -1;
@@ -316,6 +483,14 @@ int parse_midi_port_token(const std::string& value) {
 const SequencerTrackSummary* find_focused_track(const UiSnapshot& snapshot) {
     if (!snapshot.sequencer.song.available || snapshot.sequencer.song.tracks.empty()) {
         return nullptr;
+    }
+
+    if (!snapshot.sequencer.song.active_track_id.empty()) {
+        for (const auto& track : snapshot.sequencer.song.tracks) {
+            if (track.id == snapshot.sequencer.song.active_track_id) {
+                return &track;
+            }
+        }
     }
 
     const auto out_port = snapshot.sequencer.midi_out_port.value_or(-1);
@@ -362,9 +537,15 @@ void draw_song_page(const UiSnapshot& snapshot, const std::string& /*layout*/) {
 
     if (!io_variant) {
         const std::size_t max_rows = 7;
-        for (std::size_t i = 0; i < snapshot.sequencer.song.tracks.size() && i < max_rows; ++i) {
-            const auto& track = snapshot.sequencer.song.tracks[i];
-            const int y = 20 + static_cast<int>(i * 15);
+        const std::size_t first = scroll_start_index(snapshot.sequencer.ui_scroll_offset, snapshot.sequencer.song.tracks.size(), max_rows);
+        if (snapshot.sequencer.song.tracks.size() > max_rows) {
+            char pos[16];
+            std::snprintf(pos, sizeof(pos), "%zu/%zu", first + 1, snapshot.sequencer.song.tracks.size());
+            Paint_DrawString_EN(94, 3, pos, &Font8, WHITE, BLACK);
+        }
+        for (std::size_t row = 0; row < max_rows && first + row < snapshot.sequencer.song.tracks.size(); ++row) {
+            const auto& track = snapshot.sequencer.song.tracks[first + row];
+            const int y = 20 + static_cast<int>(row * 15);
 
             const std::string name = trim_text(track.name.empty() ? track.id : track.name, 11);
             Paint_DrawString_EN(0, static_cast<UWORD>(y), name.c_str(), &Font8, WHITE, BLACK);
@@ -379,9 +560,15 @@ void draw_song_page(const UiSnapshot& snapshot, const std::string& /*layout*/) {
 
     const std::string q = snapshot.sequencer.recording_quantize.empty() ? "off" : snapshot.sequencer.recording_quantize;
     const std::size_t max_rows = 4;
-    for (std::size_t i = 0; i < snapshot.sequencer.song.tracks.size() && i < max_rows; ++i) {
-        const auto& track = snapshot.sequencer.song.tracks[i];
-        const int y = 20 + static_cast<int>(i * 26);
+    const std::size_t first = scroll_start_index(snapshot.sequencer.ui_scroll_offset, snapshot.sequencer.song.tracks.size(), max_rows);
+    if (snapshot.sequencer.song.tracks.size() > max_rows) {
+        char pos[16];
+        std::snprintf(pos, sizeof(pos), "%zu/%zu", first + 1, snapshot.sequencer.song.tracks.size());
+        Paint_DrawString_EN(94, 3, pos, &Font8, WHITE, BLACK);
+    }
+    for (std::size_t row = 0; row < max_rows && first + row < snapshot.sequencer.song.tracks.size(); ++row) {
+        const auto& track = snapshot.sequencer.song.tracks[first + row];
+        const int y = 20 + static_cast<int>(row * 26);
 
         const std::string name = trim_text(track.name.empty() ? track.id : track.name, 14);
         Paint_DrawString_EN(0, static_cast<UWORD>(y), name.c_str(), &Font8, WHITE, BLACK);
@@ -404,7 +591,7 @@ void draw_song_page(const UiSnapshot& snapshot, const std::string& /*layout*/) {
     }
 }
 
-void draw_track_page(const UiSnapshot& snapshot, const std::string& /*layout*/) {
+void draw_track_page(const UiSnapshot& snapshot, const std::string& layout) {
     const auto* track = find_focused_track(snapshot);
     const std::string fallback_title = snapshot.page_title.empty() ? std::string {"Track"} : snapshot.page_title;
     const std::string track_title = track != nullptr
@@ -416,15 +603,19 @@ void draw_track_page(const UiSnapshot& snapshot, const std::string& /*layout*/) 
 
     std::string midi_in = "-";
     std::string midi_out = "-";
+    std::string midi_in_label;
+    std::string midi_out_label;
     int ch_in = -1;
     int ch_out = -1;
-    bool muted = false;
+    bool send_sync_enabled = false;
     if (track != nullptr) {
         midi_in = track->midi_in.empty() ? "-" : track->midi_in;
         midi_out = track->midi_out.empty() ? "-" : track->midi_out;
+        midi_in_label = track->midi_in_label;
+        midi_out_label = track->midi_out_label;
         ch_in = track->midi_channel_in;
         ch_out = track->midi_channel_out;
-        muted = track->muted;
+        send_sync_enabled = track->send_sync_enabled;
     } else {
         if (snapshot.sequencer.midi_in_port.has_value()) midi_in = std::to_string(*snapshot.sequencer.midi_in_port);
         if (snapshot.sequencer.midi_out_port.has_value()) midi_out = std::to_string(*snapshot.sequencer.midi_out_port);
@@ -432,28 +623,63 @@ void draw_track_page(const UiSnapshot& snapshot, const std::string& /*layout*/) 
         ch_out = snapshot.sequencer.midi_out_channel.value_or(-1);
     }
 
-    const std::string q = snapshot.sequencer.recording_quantize.empty() ? "off" : snapshot.sequencer.recording_quantize;
-    const std::uint32_t bar = snapshot.sequencer.bar.value_or(1U);
-    const std::uint32_t bars_total = snapshot.sequencer.bars_total.value_or(1U);
-    const std::uint32_t beat = snapshot.sequencer.beat.value_or(1U);
-    const std::uint32_t beats_total = snapshot.sequencer.beats_per_bar.value_or(4U);
+    std::vector<DisplayField> fields {
+        DisplayField {"In", display_midi_port(midi_in, midi_in_label)},
+        DisplayField {"Out", display_midi_port(midi_out, midi_out_label)},
+        DisplayField {"Ch In", display_midi_channel(ch_in)},
+        DisplayField {"Ch Out", display_midi_channel(ch_out)},
+        DisplayField {"Send sync", display_checkbox(send_sync_enabled)},
+    };
 
-    char line1[64];
-    char line2[64];
-    char line3[64];
-    char line4[64];
-    char line5[64];
-    std::snprintf(line1, sizeof(line1), "Mute: %s", muted ? "ON" : "OFF");
-    std::snprintf(line2, sizeof(line2), "In : P%s CH%d", midi_in.c_str(), ch_in);
-    std::snprintf(line3, sizeof(line3), "Out: P%s CH%d", midi_out.c_str(), ch_out);
-    std::snprintf(line4, sizeof(line4), "Q  : %s", q.c_str());
-    std::snprintf(line5, sizeof(line5), "Bar %u/%u Beat %u/%u", bar, bars_total, beat, beats_total);
+    const bool compact = layout == "compact" || snapshot.display_height <= 64;
+    const std::size_t selected = fields.empty()
+        ? 0U
+        : static_cast<std::size_t>(snapshot.sequencer.ui_scroll_offset % fields.size());
+    draw_editable_field_rows(
+        fields,
+        selected,
+        snapshot.sequencer.ui_editing,
+        compact,
+        compact ? 34U : 45U,
+        snapshot.render_count);
+}
 
-    Paint_DrawString_EN(0, 22, trim_text(line1, 21).c_str(), &Font12, WHITE, BLACK);
-    Paint_DrawString_EN(0, 40, trim_text(line2, 21).c_str(), &Font12, WHITE, BLACK);
-    Paint_DrawString_EN(0, 58, trim_text(line3, 21).c_str(), &Font12, WHITE, BLACK);
-    Paint_DrawString_EN(0, 76, trim_text(line4, 21).c_str(), &Font12, WHITE, BLACK);
-    Paint_DrawString_EN(0, 100, trim_text(line5, 21).c_str(), &Font8, WHITE, BLACK);
+void draw_settings_page(const UiSnapshot& snapshot, const std::string& layout) {
+    if (layout == "compact") {
+        Paint_DrawString_EN(0, 0, "Settings", &Font8, WHITE, BLACK);
+        const std::string clock = snapshot.sequencer.clock_source.empty() ? "internal" : snapshot.sequencer.clock_source;
+        Paint_DrawString_EN(0, 12, trim_text(display_clock_source(clock), 16).c_str(), &Font8, WHITE, BLACK);
+        return;
+    }
+
+    Paint_DrawString_EN(0, 0, "Settings", &Font12, WHITE, BLACK);
+    Paint_DrawLine(0, 16, 127, 16, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+
+    const std::string clock = snapshot.sequencer.clock_source.empty() ? "internal" : snapshot.sequencer.clock_source;
+    const std::string midi_source = snapshot.sequencer.clock_midi_source.empty() ? "any" : snapshot.sequencer.clock_midi_source;
+    char ppqn_value[16];
+    std::snprintf(ppqn_value, sizeof(ppqn_value), "%u", snapshot.sequencer.ppqn.value_or(24U));
+    const std::string loop_quantize = snapshot.sequencer.loop_quantize.empty() ? "1/16" : snapshot.sequencer.loop_quantize;
+
+    std::vector<DisplayField> fields {
+        DisplayField {"Clock", display_clock_source(clock)},
+        DisplayField {"MIDI", display_clock_midi_source(midi_source)},
+        DisplayField {"PPQN", ppqn_value},
+        DisplayField {"Loop Q", loop_quantize},
+        DisplayField {"Sound", display_audio_device(snapshot.sequencer.metronome_alsa_device)},
+    };
+
+    const bool compact = snapshot.display_height <= 64;
+    const std::size_t selected = fields.empty()
+        ? 0U
+        : static_cast<std::size_t>(snapshot.sequencer.ui_scroll_offset % fields.size());
+    draw_editable_field_rows(
+        fields,
+        selected,
+        snapshot.sequencer.ui_editing,
+        compact,
+        compact ? 40U : 50U,
+        snapshot.render_count);
 }
 
 void draw_recording_page(const UiSnapshot& snapshot, const std::string& layout) {
@@ -605,6 +831,8 @@ void draw_page(const UiSnapshot& snapshot, const std::string& layout) {
         draw_song_page(snapshot, layout);
     } else if (snapshot.page_type == "track") {
         draw_track_page(snapshot, layout);
+    } else if (snapshot.page_type == "settings") {
+        draw_settings_page(snapshot, layout);
     } else if (snapshot.page_type == "transport") {
         draw_transport_page(snapshot, layout);
     } else if (snapshot.page_type == "midi_monitor") {
